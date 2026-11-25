@@ -1,4 +1,3 @@
-
 from pymongo import AsyncMongoClient
 from app.core.config import settings
 
@@ -8,6 +7,7 @@ async def connect_to_mongodb(app):
 
     client = AsyncMongoClient(
         settings.MONGODB_URI,
+        tz_aware=True,
         serverSelectionTimeoutMS=5000,
     )
 

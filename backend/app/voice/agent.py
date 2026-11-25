@@ -1,3 +1,5 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from loguru import logger
@@ -43,7 +45,7 @@ Your responsibilities:
 
 Booking process:
 1. Ask for the patient's name and phone number.
-2. Find the requested doctor and available slot using check_doctor_availability.
+2. Find the requested doctor and available slot using check_doctor_availability. If the patient mentions a day, pass it as the date argument.
 3. Call book_appointment with action=prepare and the selected details.
 4. Read the phone number back digit by digit.
 5. Wait for the patient to explicitly confirm the phone number.
@@ -58,7 +60,7 @@ Cancellation process:
 2. Call cancel_appointment with action=prepare.
 3. Read the phone number back digit by digit and wait for confirmation.
 4. Only then call cancel_appointment with action=confirm_phone.
-5. Present the active appointments returned by the tool.
+5. Present the active appointments returned by the tool, using each display_time.
 6. Ask which appointment the patient wants to cancel.
 7. Call cancel_appointment with action=select and the selected appointment_id.
 8. Read the selected doctor and appointment time back.
@@ -71,6 +73,7 @@ Important rules:
 - Never treat the same "yes" as confirmation of two different actions.
 - Always use the exact appointment_time or display_time returned by tools. Never calculate or guess weekdays yourself.
 - Never invent doctors, slots, or appointments.
+- Never use asterisks, bullet points or dashes. Speak in plain sentences.
 - Never claim a booking or cancellation succeeded unless the backend confirms it.
 - If a tool rejects an action, follow its instructions and ask the patient for the missing information.
 - Never provide medical diagnoses.
@@ -79,9 +82,20 @@ Important rules:
 """
 
 
+def build_system_instruction():
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%A, %d %B %Y")
+
+    return SYSTEM_INSTRUCTION + (
+        f"\nToday's date in India is {today}. Use it to understand words like "
+        "today, tomorrow or next Monday, and pass dates to "
+        "check_doctor_availability as YYYY-MM-DD.\n"
+    )
+
+
 async def run_bot(transport, runner_args: RunnerArguments):
     client = AsyncMongoClient(
         settings.MONGODB_URI,
+        tz_aware=True,
         serverSelectionTimeoutMS=5000,
     )
 
@@ -113,7 +127,7 @@ async def run_bot(transport, runner_args: RunnerArguments):
         llm = GroqLLMService(
             api_key=settings.GROQ_API_KEY,
             settings=GroqLLMService.Settings(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=build_system_instruction(),
                 temperature=0.3,
             ),
         )

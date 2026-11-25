@@ -1,12 +1,15 @@
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from app.services.appointment_service import (
     check_doctor_availability,
+    normalize_phone,
     book_appointment as save_appointment,
     cancel_appointment as remove_appointment,
 )
+
 
 def _format_appointment_time(value):
     if isinstance(value, str):
@@ -55,27 +58,28 @@ def _latest_user_turn(params):
     return -1, ""
 
 
+_YES_WORDS = {
+    "yes", "yeah", "yep", "yup", "correct", "right", "confirm",
+    "confirmed", "sure", "ok", "okay", "absolutely",
+}
+_NO_WORDS = {
+    "no", "nope", "not", "wrong", "incorrect", "dont", "don't",
+    "wait", "change",
+}
+
+
 def _is_explicit_yes(text):
-    normalized = text.strip().rstrip(".!?").strip()
+    """Accept natural confirmations like 'Yes, that's correct' but reject any denial."""
+    text = text.lower().replace("\u2019", "'")
+    words = re.findall(r"[a-z']+", text)
 
-    return normalized in {
-        "yes",
-        "yes please",
-        "yeah",
-        "yep",
-        "correct",
-        "that's correct",
-        "that is correct",
-        "i confirm",
-        "i agree",
-        "confirm",
-        "go ahead",
-        "please do",
-    }
+    if not words:
+        return False
 
+    if any(word in _NO_WORDS for word in words):
+        return False
 
-def _normalize_phone(phone):
-    return "".join(character for character in str(phone) if character.isdigit())
+    return "go ahead" in text or any(word in _YES_WORDS for word in words[:5])
 
 
 def _phone_readback(phone):
@@ -91,22 +95,46 @@ async def check_availability_handler(params):
         args = params.arguments
         resources = _get_resources(params)
 
+        slot_date = None
+        raw_date = args.get("date")
+
+        if raw_date:
+            try:
+                slot_date = date.fromisoformat(str(raw_date).strip())
+            except ValueError:
+                await _finish(params, {
+                    "success": False,
+                    "message": "The date must be in YYYY-MM-DD format.",
+                })
+                return
+
         result = await check_doctor_availability(
             db=resources["db"],
             specialty=args.get("specialty"),
             doctor_name=args.get("doctor_name"),
+            slot_date=slot_date,
         )
 
+        # Give the LLM only India-time strings so it never reads raw UTC.
         for doctor in result:
             for slot in doctor["available_slots"]:
                 slot["display_time"] = _format_appointment_time(
                     slot["starts_at"]
                 )
+                slot.pop("starts_at")
 
-        await _finish(params, {
+        response = {
             "success": True,
             "doctors": result,
-        })
+        }
+
+        if not any(doctor["available_slots"] for doctor in result):
+            response["message"] = (
+                "No available slots matched. Tell the patient and offer "
+                "another date or doctor."
+            )
+
+        await _finish(params, response)
 
     except Exception as exc:
         await _finish(params, {
@@ -127,7 +155,7 @@ async def book_appointment_handler(params):
 
         if action == "prepare":
             patient_name = str(args.get("patient_name", "")).strip()
-            phone = _normalize_phone(args.get("phone_number", ""))
+            phone = normalize_phone(args.get("phone_number", ""))
 
             doctor_id = str(args.get("doctor_id", ""))
             slot_id = str(args.get("slot_id", ""))
@@ -165,7 +193,7 @@ async def book_appointment_handler(params):
                 return
 
             prepared_turn, _ = _latest_user_turn(params)
-            
+
             state["pending_booking"] = {
                 "patient_name": patient_name,
                 "phone_number": phone,
@@ -272,11 +300,10 @@ async def book_appointment_handler(params):
 
             if result.get("success"):
                 state["pending_booking"] = None
-
-            if result.get("success"):
                 result["display_time"] = _format_appointment_time(
                     result["starts_at"]
                 )
+                result.pop("starts_at")
 
             await _finish(params, result)
             return
@@ -304,7 +331,7 @@ async def cancel_appointment_handler(params):
         pending = state.get("pending_cancel")
 
         if action == "prepare":
-            phone = _normalize_phone(args.get("phone_number", ""))
+            phone = normalize_phone(args.get("phone_number", ""))
 
             if not (10 <= len(phone) <= 15):
                 await _finish(params, {
@@ -376,7 +403,7 @@ async def cancel_appointment_handler(params):
                     "appointment_id": str(item["_id"]),
                     "doctor_name": item["doctor_name"],
                     "specialty": item.get("specialty"),
-                    "starts_at": item["starts_at"].isoformat(),
+                    "display_time": _format_appointment_time(item["starts_at"]),
                 }
                 for item in appointments
             ]
@@ -471,6 +498,10 @@ async def cancel_appointment_handler(params):
 
             if result.get("success"):
                 state["pending_cancel"] = None
+                result["display_time"] = _format_appointment_time(
+                    result["starts_at"]
+                )
+                result.pop("starts_at")
 
             await _finish(params, result)
             return
@@ -492,7 +523,8 @@ def build_voice_tools():
         FunctionSchema(
             name="check_doctor_availability",
             description=(
-                "Find active doctors and their future available appointment slots. "
+                "Find active doctors and their future available appointment slots, "
+                "optionally for one specialty, one doctor or one date. "
                 "Use this before preparing a booking."
             ),
             properties={
@@ -503,6 +535,10 @@ def build_voice_tools():
                 "doctor_name": {
                     "type": "string",
                     "description": "Optional doctor name.",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Optional date in YYYY-MM-DD format (India time).",
                 },
             },
             required=[],

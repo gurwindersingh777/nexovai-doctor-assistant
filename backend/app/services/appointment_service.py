@@ -1,22 +1,57 @@
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
+
 from bson import ObjectId
 from pymongo import ReturnDocument
+
+INDIA_TZ = ZoneInfo("Asia/Kolkata")
+
+
+def normalize_phone(phone) -> str:
+    """Keep digits only and drop the Indian country code / leading zero."""
+    digits = "".join(c for c in str(phone) if c.isdigit())
+
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith("0"):
+        digits = digits[1:]
+
+    return digits
 
 
 async def check_doctor_availability(
     db,
     specialty: str | None = None,
     doctor_name: str | None = None,
+    slot_date: date | None = None,
 ):
     doctor_query = {"active": True}
 
     if specialty:
-        doctor_query["specialty"] = {"$regex": specialty, "$options": "i"}
+        doctor_query["specialty"] = {
+            "$regex": re.escape(specialty.strip()),
+            "$options": "i",
+        }
 
     if doctor_name:
-        doctor_query["name"] = {"$regex": doctor_name, "$options": "i"}
+        # "Dr. Ananya Sharma", "Dr Ananya Sharma" and "Ananya Sharma" should all match.
+        cleaned_name = re.sub(r"^\s*dr\.?\s*", "", doctor_name, flags=re.IGNORECASE)
+        doctor_query["name"] = {
+            "$regex": re.escape(cleaned_name.strip()),
+            "$options": "i",
+        }
 
     doctors = await db["doctors"].find(doctor_query).to_list(length=100)
+
+    starts_filter = {"$gt": datetime.now(timezone.utc)}
+
+    # Convert the requested Indian calendar date into UTC boundaries.
+    if slot_date:
+        start_local = datetime.combine(slot_date, time.min, tzinfo=INDIA_TZ)
+        end_local = datetime.combine(slot_date, time.max, tzinfo=INDIA_TZ)
+        starts_filter["$gte"] = start_local.astimezone(timezone.utc)
+        starts_filter["$lte"] = end_local.astimezone(timezone.utc)
 
     results = []
 
@@ -24,7 +59,7 @@ async def check_doctor_availability(
         slots = await db["slots"].find({
             "doctor_id": doctor["_id"],
             "status": "available",
-            "starts_at": {"$gt": datetime.now(timezone.utc)},
+            "starts_at": starts_filter,
         }).sort("starts_at", 1).to_list(length=20)
 
         results.append({
@@ -50,6 +85,11 @@ async def book_appointment(
     doctor_id: str,
     slot_id: str,
 ):
+    phone_number = normalize_phone(phone_number)
+
+    if not (10 <= len(phone_number) <= 15):
+        return {"success": False, "message": "Invalid phone number"}
+
     if not ObjectId.is_valid(doctor_id):
         return {"success": False, "message": "Invalid doctor ID"}
 
@@ -132,6 +172,8 @@ async def cancel_appointment(
     phone_number: str,
     appointment_id: str,
 ):
+    phone_number = normalize_phone(phone_number)
+
     if not ObjectId.is_valid(appointment_id):
         return {"success": False, "message": "Invalid appointment ID"}
 
