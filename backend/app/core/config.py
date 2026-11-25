@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     MONGODB_DB_NAME: str = "nexovai_doctor"
     GROQ_API_KEY: str = ""
     ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_VOICE_ID: str = ""
     FRONTEND_URL: str = "http://localhost:5173"
     
     model_config = SettingsConfigDict(

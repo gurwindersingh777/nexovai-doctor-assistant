@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.165.0",
-    "pipecat-ai[elevenlabs,groq]>=1.17.0",
+    "pipecat-ai[elevenlabs,groq,runner,webrtc]>=1.17.0",
     "pydantic-settings>=2.16.3",
     "pymongo>=4.20.1",
     "python-dotenv>=1.2.4",
