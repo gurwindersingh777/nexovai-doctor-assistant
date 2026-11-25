@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.database.connection import (connect_to_mongodb , close_mongodb_connection)
+from app.api.routes import router
 
 @asynccontextmanager
 async def lifespan(app : FastAPI):
@@ -29,6 +30,8 @@ app.add_middleware(
   allow_headers=["*"],
   allow_methods=["*"],
 )
+
+app.include_router(router)
 
 @app.get("/")
 async def root():
