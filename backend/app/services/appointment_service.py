@@ -1,12 +1,10 @@
 import re
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
-
 from bson import ObjectId
 from pymongo import ReturnDocument
 
 INDIA_TZ = ZoneInfo("Asia/Kolkata")
-
 
 def normalize_phone(phone) -> str:
     """Keep digits only and drop the Indian country code / leading zero."""
@@ -35,7 +33,6 @@ async def check_doctor_availability(
         }
 
     if doctor_name:
-        # "Dr. Ananya Sharma", "Dr Ananya Sharma" and "Ananya Sharma" should all match.
         cleaned_name = re.sub(r"^\s*dr\.?\s*", "", doctor_name, flags=re.IGNORECASE)
         doctor_query["name"] = {
             "$regex": re.escape(cleaned_name.strip()),
@@ -96,10 +93,7 @@ async def book_appointment(
     if not ObjectId.is_valid(slot_id):
         return {"success": False, "message": "Invalid slot ID"}
 
-    doctor = await db["doctors"].find_one({
-        "_id": ObjectId(doctor_id),
-        "active": True,
-    })
+    doctor = await db["doctors"].find_one({"_id": ObjectId(doctor_id), "active": True})
 
     if not doctor:
         return {"success": False, "message": "Doctor not found"}

@@ -8,12 +8,7 @@ interface WaveformProps {
   className?: string;
 }
 
-export function Waveform({
-  getLevel,
-  active,
-  bars = 34,
-  className,
-}: WaveformProps) {
+export function Waveform({getLevel, active, bars = 34, className}: WaveformProps) {
   const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
 
   useEffect(() => {

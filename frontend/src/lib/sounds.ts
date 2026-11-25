@@ -6,13 +6,7 @@ function getContext() {
   return context;
 }
 
-function beep(
-  c: AudioContext,
-  frequency: number,
-  start: number,
-  duration: number,
-  volume = 0.05,
-) {
+function beep(c: AudioContext, frequency: number, start: number, duration: number, volume = 0.05) {
   const oscillator = c.createOscillator();
   const gain = c.createGain();
 

@@ -102,10 +102,7 @@ async def check_availability_handler(params):
             try:
                 slot_date = date.fromisoformat(str(raw_date).strip())
             except ValueError:
-                await _finish(params, {
-                    "success": False,
-                    "message": "The date must be in YYYY-MM-DD format.",
-                })
+                await _finish(params, {"success": False, "message": "The date must be in YYYY-MM-DD format."})
                 return
 
         result = await check_doctor_availability(
@@ -115,7 +112,6 @@ async def check_availability_handler(params):
             slot_date=slot_date,
         )
 
-        # Give the LLM only India-time strings so it never reads raw UTC.
         for doctor in result:
             for slot in doctor["available_slots"]:
                 slot["display_time"] = _format_appointment_time(

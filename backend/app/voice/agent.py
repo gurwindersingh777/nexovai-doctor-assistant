@@ -6,7 +6,7 @@ from loguru import logger
 from pymongo import AsyncMongoClient
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import (
     PipelineParams,
@@ -33,6 +33,12 @@ from app.voice.tools import build_voice_tools
 
 load_dotenv(override=True)
 
+GREETING = (
+    "Hello, this is NexovAI. "
+    "I can check doctor availability, book, or cancel an appointment. "
+    "How can I help you today?"
+)
+
 
 SYSTEM_INSTRUCTION = """
 You are NexovAI, a friendly voice-based doctor appointment assistant.
@@ -42,6 +48,13 @@ Your responsibilities:
 - Help patients book appointments.
 - Help patients cancel existing appointments.
 - Speak naturally and keep responses concise.
+
+Greeting rules:
+- The assistant has already introduced itself at the beginning of the call.
+- Never repeat the introduction or say your name again.
+- If the patient says hello, respond only with: "How can I help you today?"
+- Do not repeat the initial greeting.
+- Continue directly with the patient's request.
 
 Booking process:
 1. Ask for the patient's name and phone number.
@@ -73,6 +86,8 @@ Important rules:
 - Never treat the same "yes" as confirmation of two different actions.
 - Always use the exact appointment_time or display_time returned by tools. Never calculate or guess weekdays yourself.
 - Never invent doctors, slots, or appointments.
+- Copy doctor_id, slot_id and appointment_id exactly as returned by the tools. Never make up an ID.
+- Always pass phone_number to tools as digits only.
 - Never use asterisks, bullet points or dashes. Speak in plain sentences.
 - Never claim a booking or cancellation succeeded unless the backend confirms it.
 - If a tool rejects an action, follow its instructions and ask the patient for the missing information.
@@ -137,9 +152,7 @@ async def run_bot(transport, runner_args: RunnerArguments):
         user_aggregator, assistant_aggregator = (
             LLMContextAggregatorPair(
                 context,
-                user_params=LLMUserAggregatorParams(
-                    vad_analyzer=SileroVADAnalyzer(),
-                ),
+                user_params=LLMUserAggregatorParams(vad_analyzer=SileroVADAnalyzer()),
             )
         )
 
@@ -155,10 +168,7 @@ async def run_bot(transport, runner_args: RunnerArguments):
 
         worker = PipelineWorker(
             pipeline,
-            params=PipelineParams(
-                enable_metrics=True,
-                enable_usage_metrics=True,
-            ),
+            params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
             processor_unusable_policy=ProcessorUnusablePolicy.END,
             app_resources=app_resources,
         )
@@ -169,22 +179,24 @@ async def run_bot(transport, runner_args: RunnerArguments):
 
         await runner.add_workers(worker)
 
+        greeting_state = {"sent": False} 
+
+        @worker.rtvi.event_handler("on_client_ready")
+        async def on_client_ready(rtvi):
+            if greeting_state["sent"]:
+                return
+
+            greeting_state["sent"] = True
+            logger.info("Client ready, speaking greeting")
+
+            await worker.queue_frames([TTSSpeakFrame(GREETING, append_to_context=True)])
+
         @transport.event_handler("on_client_connected")
-        async def on_client_connected(transport, client):
+        async def on_client_connected(transport, webrtc_client):
             logger.info("Patient connected to NexovAI")
 
-            context.add_message({
-                "role": "developer",
-                "content": (
-                    "Introduce yourself as NexovAI and ask how you can help "
-                    "the patient today."
-                ),
-            })
-
-            await worker.queue_frames([LLMRunFrame()])
-
         @transport.event_handler("on_client_disconnected")
-        async def on_client_disconnected(transport, client):
+        async def on_client_disconnected(transport, webrtc_client):
             logger.info("Patient disconnected")
             await runner.cancel()
 

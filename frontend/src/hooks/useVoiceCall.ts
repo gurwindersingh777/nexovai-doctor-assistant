@@ -40,7 +40,7 @@ export function useVoiceCall() {
     setCallStateValue(next);
   }, []);
 
-  /* ---------- transcript ---------- */
+  // transcript 
 
   const addUserTranscript = useCallback((text: string) => {
     const cleanText = text.replace(/\*+/g, "").replace(/^\s*[-•]\s+/gm, "").trim();
@@ -96,9 +96,8 @@ export function useVoiceCall() {
     [],
   );
 
-  /* ---------- audio ---------- */
+  // audio 
 
-  // THE FIX: the JS client never plays the bot's audio by itself.
   const attachBotAudio = useCallback((track: MediaStreamTrack) => {
     const current = audioRef.current?.srcObject as MediaStream | null | undefined;
     if (current?.getAudioTracks()[0]?.id === track.id) return;
@@ -144,7 +143,7 @@ export function useVoiceCall() {
     if (audioRef.current) audioRef.current.srcObject = null;
   }, []);
 
-  /* ---------- call lifecycle ---------- */
+  // call lifecycle 
 
   const finishCall = useCallback(() => {
     const current = stateRef.current;

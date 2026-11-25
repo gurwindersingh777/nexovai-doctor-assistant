@@ -3,10 +3,9 @@ from zoneinfo import ZoneInfo
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from app.services.appointment_service import (book_appointment, cancel_appointment)
+from app.services.appointment_service import (book_appointment, cancel_appointment, normalize_phone)
 
 router = APIRouter(prefix="/api", tags=["Appointments"])
-
 
 @router.get("/doctors")
 async def get_doctors(request: Request):
@@ -78,6 +77,7 @@ async def get_slots(
         for slot in slots
     ]
 
+
 class BookingRequest(BaseModel):
     patient_name: str = Field(min_length=2, max_length=100)
     phone_number: str = Field(min_length=7, max_length=20)
@@ -110,23 +110,32 @@ async def create_appointment(payload: BookingRequest, request: Request):
 @router.get("/appointments")
 async def get_appointments(
     request: Request,
-    phone_number: str = Query(min_length=7, max_length=20),
+    # A caller (or the voice agent) can still filter by phone.
+    phone_number: str | None = Query(default=None, max_length=20),
 ):
     db = request.app.state.mongodb
 
-    appointments = await db["appointments"].find(
-        {"phone_number": phone_number}
-    ).sort("created_at", -1).to_list(length=100)
+    query: dict = {}
+
+    if phone_number:
+        normalized = normalize_phone(phone_number)
+
+        if not (10 <= len(normalized) <= 15):
+            raise HTTPException(status_code=400, detail="Invalid phone number")
+
+        query["phone_number"] = normalized
+
+    appointments = await db["appointments"].find(query).sort("created_at", -1).to_list(length=100)
 
     return [
         {
             "id": str(item["_id"]),
-            "patient_name": item["patient_name"],
-            "phone_number": item["phone_number"],
-            "doctor_name": item["doctor_name"],
-            "specialty": item["specialty"],
+            "patient_name": item.get("patient_name", ""),
+            "phone_number": item.get("phone_number", ""),
+            "doctor_name": item.get("doctor_name", "Unknown doctor"),
+            "specialty": item.get("specialty", ""),
             "starts_at": item["starts_at"].isoformat(),
-            "status": item["status"],
+            "status": item.get("status", "booked"),
         }
         for item in appointments
     ]

@@ -29,15 +29,7 @@ interface VoicePhoneProps {
   onToggleMute: () => void;
 }
 
-function Monogram({
-  className,
-  pulsing = false,
-  dim = false,
-}: {
-  className?: string;
-  pulsing?: boolean;
-  dim?: boolean;
-}) {
+function Monogram({className,pulsing = false,dim = false}: {className?: string; pulsing?: boolean; dim?: boolean}) {
   return (
     <div className="relative grid place-items-center">
       {pulsing && (
@@ -60,8 +52,7 @@ function Monogram({
   );
 }
 
-const roundButton =
-  "size-14 rounded-full border border-white/15 bg-white/10 text-white hover:bg-white/20";
+const roundButton = "size-14 rounded-full border border-white/15 bg-white/10 text-white hover:bg-white/20";
 
 export function VoicePhone({
   state,

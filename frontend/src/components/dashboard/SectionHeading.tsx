@@ -1,10 +1,4 @@
-export function SectionHeading({
-  title,
-  meta,
-}: {
-  title: string;
-  meta?: string;
-}) {
+export function SectionHeading({title, meta}: { title: string; meta?: string }) {
   return (
     <div className="mb-4 flex items-baseline justify-between gap-4">
       <h2 className="font-display text-3xl tracking-tight">{title}</h2>

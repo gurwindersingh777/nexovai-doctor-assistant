@@ -1,16 +1,8 @@
-import type {
-  Appointment,
-  BookingPayload,
-  Doctor,
-  DoctorSlot,
-} from "@/types";
+import type { Appointment, BookingPayload, Doctor, DoctorSlot} from "@/types";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-async function request<T>(
-  endpoint: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {} ): Promise<T> {
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers: {
