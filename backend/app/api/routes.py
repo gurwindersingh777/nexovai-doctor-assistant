@@ -1,9 +1,9 @@
-
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
-
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
+from app.services.appointment_service import (book_appointment, cancel_appointment)
 
 router = APIRouter(prefix="/api", tags=["Appointments"])
 
@@ -77,3 +77,76 @@ async def get_slots(
         }
         for slot in slots
     ]
+
+class BookingRequest(BaseModel):
+    patient_name: str = Field(min_length=2, max_length=100)
+    phone_number: str = Field(min_length=7, max_length=20)
+    doctor_id: str
+    slot_id: str
+
+
+class CancellationRequest(BaseModel):
+    phone_number: str = Field(min_length=7, max_length=20)
+
+
+@router.post("/appointments")
+async def create_appointment(payload: BookingRequest, request: Request):
+    db = request.app.state.mongodb
+
+    result = await book_appointment(
+        db=db,
+        patient_name=payload.patient_name,
+        phone_number=payload.phone_number,
+        doctor_id=payload.doctor_id,
+        slot_id=payload.slot_id,
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+
+    return result
+
+
+@router.get("/appointments")
+async def get_appointments(
+    request: Request,
+    phone_number: str = Query(min_length=7, max_length=20),
+):
+    db = request.app.state.mongodb
+
+    appointments = await db["appointments"].find(
+        {"phone_number": phone_number}
+    ).sort("created_at", -1).to_list(length=100)
+
+    return [
+        {
+            "id": str(item["_id"]),
+            "patient_name": item["patient_name"],
+            "phone_number": item["phone_number"],
+            "doctor_name": item["doctor_name"],
+            "specialty": item["specialty"],
+            "starts_at": item["starts_at"].isoformat(),
+            "status": item["status"],
+        }
+        for item in appointments
+    ]
+
+
+@router.post("/appointments/{appointment_id}/cancel")
+async def cancel_existing_appointment(
+    appointment_id: str,
+    payload: CancellationRequest,
+    request: Request,
+):
+    db = request.app.state.mongodb
+
+    result = await cancel_appointment(
+        db=db,
+        phone_number=payload.phone_number,
+        appointment_id=appointment_id,
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+
+    return result
